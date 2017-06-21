@@ -13,6 +13,10 @@ import org.crsh.cli.Argument
 import org.crsh.jcr.command.Path
 import org.crsh.command.Pipe
 
+import javax.jcr.Value
+import javax.jcr.ValueFactory
+import javax.jcr.ValueFormatException
+
 @Usage("node commands")
 public class node extends org.crsh.jcr.command.JCRCommand {
 
@@ -117,32 +121,33 @@ set is a <Node,Node> command updating the property of the consumed node stream."
   }
 
   private void update(Node node, String propertyName, String propertyValue, PropertyType propertyType) {
-    // Set the property
-    if (propertyValue != null && node.hasProperty(propertyName)) {
-      // If the current node has already a property, we just update it
-      node[propertyName] = propertyValue;
-    } else {
+    // Set the property if it already exists or create it otherwise
+    if (propertyValue != null) {
+      // Use the specified property type (or STRING if none was set explicitly)
+      def requiredType = propertyType.value;
 
-      // Otherwise we try to create it
-      if (propertyValue != null) {
-        // Use the specified property type (or STRING if none was set explicitely)
-        def requiredType = propertyType.value;
-
-        // But if we can find meta info about it we use it
-        for (def pd : node.primaryNodeType.propertyDefinitions) {
-          if (pd.name == propertyName) {
-            requiredType = pd.requiredType;
-            break;
-          }
+      // But if we can find meta info about it we use it
+      for (def pd : node.primaryNodeType.propertyDefinitions) {
+        if (pd.name == propertyName) {
+          requiredType = pd.requiredType;
+          break;
         }
+      }
 
-        // Perform the set
+      // Perform the set
+      try {
         node.setProperty(propertyName, propertyValue, requiredType);
-      } else {
-        // Remove any existing property with that name
-        if (node.hasProperty(propertyName)) {
-          node.getProperty(propertyName).remove()
-        }
+      } catch (ValueFormatException e) {
+        // it is possible that the property is a multivalued one
+        ValueFactory valueFactory = session.getValueFactory()
+        Value[] values = new Value[1]
+        values[0] = valueFactory.createValue(propertyValue, requiredType)
+        node.setProperty(propertyName, values)
+      }
+    } else {
+      // Remove any existing property with that name
+      if (node.hasProperty(propertyName)) {
+        node.getProperty(propertyName).remove()
       }
     }
   }
